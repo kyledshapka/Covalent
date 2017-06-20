@@ -1,0 +1,115 @@
+########### Templates ################
+templates:
+    run-daemon: &daemon-run
+        detach: true
+        restart: "always"
+    run-protect: &protect-run
+        read_only: false
+        tmpfs:
+            - "/tmp:rw,nosuid,nodev,noexec,relatime"
+            - "/run:rw,noexec,nosuid,size=65536k"
+    run-once: &once-run
+        rm: true
+        detach: false
+        restart:
+    run-interactive: &interactive-run
+        <<: [ *once-run ]
+        interactive: true
+        tty: true
+
+### Service Templates ################
+service-templates:
+
+### Web Template #####################
+    web: &web-container
+        <<: [ *daemon-run, *protect-run ]
+        build:
+            context: ./php-nginx
+        image: "shapka/web:beta" #
+        volumes:
+          # Mount the directory for the web service
+          - "php-nginx/dependencies:/var/www/"
+
+          # Configuration settings for the web service
+          - "php-nginx/config/.settings-development:/var/www/.settings-development"
+          - "php-nginx/config/.env:/var/www/.env" #
+          - "php-nginx/nginx/log:/etc/nginx/logs"
+
+          # Forward local machine SSH key to docker
+          - "$SSH_AUTH_SOCK:/ssh-agent"
+          - "php-nginx/ssh/known_hosts:/root/.ssh/known_hosts"
+          - "php-nginx/ssh/config:/root/.ssh/config"
+        env:
+          - &ssh_auth
+            "SSH_AUTH_SOCK=/ssh-agent"
+        add-host:
+          - "pm.sigrd.com:172.17.144.13"
+
+### Postgres Template #################
+    postgres: &postgres-container
+        <<: [ *daemon-run, *protect-run ]
+        build:
+            context: ./postgres
+        image: "shapka/postgres:beta"
+        volumes:
+          - "data/:/var/lib/postgresql/data/"
+
+### LDAP Template ####################
+    ldap: &ldap-container
+        <<: [ *daemon-run, *protect-run ]
+        build:
+            context: ./ldap
+        image: "shapka/ldap:latest"
+        volumes:
+services:
+
+### web Container ####################
+    web:
+        <<: [ *daemon-run, *web-container ]
+        ports:
+          - "80:80"
+        net: "vpn"
+        net-alias:
+          - "web"
+
+### Postgres Container ################
+    postgres:
+        <<: [ *postgres-container ]
+        expose:
+          - "5432"
+        net: "vpn"
+        net-alias:
+          - "postgres"
+        volumes:
+          - ""
+
+### LDAP Container#####################
+    ldap:
+        <<: [ *ldap-container ]
+        expose:
+          - "1389"
+          - "1636"
+#          - "4444"
+        net: "vpn"
+        net-alias:
+          - "ldap"
+
+
+#######################################
+groups:
+    web:
+      - "web"
+    postgres:
+      - "postgres"
+    ldap:
+      - "ldap"
+    munica:
+      - web
+      - postgres
+      - ldap
+networks:
+    vpn:
+hooks:
+    web1:
+        post-start: "/bin/sh -c 'docker network connect munica_geoserver $CRANE_HOOKED_CONTAINER; docker network connect munica_ldap $CRANE_HOOKED_CONTAINER; true'"
+        post-stop: "/bin/sh -c 'docker network disconnect munica_geoserver $CRANE_HOOKED_CONTAINER; docker network disconnect munica_ldap $CRANE_HOOKED_CONTAINER; true'"
