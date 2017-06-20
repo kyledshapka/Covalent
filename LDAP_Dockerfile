@@ -1,0 +1,26 @@
+FROM java:latest
+
+WORKDIR /opt
+
+RUN apt-get install -y wget unzip
+
+# Get a copy of opendj
+COPY /opendj/opendj-4.0.0-M2.zip /opt
+RUN unzip /opt/opendj-4.0.0-M2.zip && rm -r /opt/opendj-4.0.0-M2.zip 
+COPY /ldifs/Example.ldif /opt/Example.ldif
+
+ENV INSTALLPROP /opendj/opendj-install.properties
+ENV STARTSH startOpenDJ
+
+COPY $INSTALLPROP /opt/$INSTALLPROP
+
+COPY /opendj/startOpenDJ /opt/startOpenDJ
+RUN chmod +x /opt/startOpenDJ
+
+WORKDIR /opt/opendj
+
+RUN ./setup --cli --propertiesFilePath /opt/$INSTALLPROP --acceptLicense --no-prompt
+
+RUN ./bin/status
+
+ENTRYPOINT ["/opt/startOpenDJ"]
